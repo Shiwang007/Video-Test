@@ -1,0 +1,62 @@
+<html>
+  <head>
+    <style>
+        tr {
+            vertical-align: top;
+        }
+
+        .video {
+            width: 360px;
+            background-color: black;
+            margin: 2px 0;
+        }
+
+        button {
+            margin: 2;
+        }
+
+        #sharedBtns {
+            padding: 5;
+            background-color: papayawhip;
+            display: flex;
+            justify-content: center;
+        }
+    </style>
+  </head>
+  <body>
+    <div id="video">
+        <table>
+            <thead>
+                <th>Local Video</th>
+                <th>Remote Video</th>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>
+                        <div id="sharedBtns">
+                            <video id="localVideo" autoplay class="video"></video>
+                        </div>
+                    </td>
+                    <td>
+                        <div id="sharedBtns">
+                            <video id="remoteVideo" autoplay class="video"></video>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2">
+                        <div id="sharedBtns">
+                            <!-- Two buttons: Publish and Subscribe -->
+                            <button id="btnPublish">Publish</button>
+                            <button id="btnSubscribe">Subscribe</button>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+  </body>
+  <footer>
+      <script src="bundle.js"></script>
+  </footer>
+</html>
