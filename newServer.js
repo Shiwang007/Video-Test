@@ -218,7 +218,7 @@ const createWebRtcTransport = async (callback) => {
       listenIps: [
         {
           ip: "0.0.0.0",
-          announcedIp: process.env.RENDER_EXTERNAL_HOSTNAME || "192.168.1.3",
+          announcedIp: process.env.RENDER_EXTERNAL_HOSTNAME,
         },
       ],
       enableUdp: true,
