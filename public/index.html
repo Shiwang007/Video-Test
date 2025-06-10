@@ -1,62 +1,89 @@
-<html>
-  <head>
-    <style>
-        tr {
-            vertical-align: top;
-        }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Mediasoup Video Chat</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f7f7f7;
+      padding: 20px;
+    }
 
-        .video {
-            width: 360px;
-            background-color: black;
-            margin: 2px 0;
-        }
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
 
-        button {
-            margin: 2;
-        }
+    #controls {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
 
-        #sharedBtns {
-            padding: 5;
-            background-color: papayawhip;
-            display: flex;
-            justify-content: center;
-        }
-    </style>
-  </head>
-  <body>
-    <div id="video">
-        <table>
-            <thead>
-                <th>Local Video</th>
-                <th>Remote Video</th>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>
-                        <div id="sharedBtns">
-                            <video id="localVideo" autoplay class="video"></video>
-                        </div>
-                    </td>
-                    <td>
-                        <div id="sharedBtns">
-                            <video id="remoteVideo" autoplay class="video"></video>
-                        </div>
-                    </td>
-                </tr>
-                <tr>
-                    <td colspan="2">
-                        <div id="sharedBtns">
-                            <!-- Two buttons: Publish and Subscribe -->
-                            <button id="btnPublish">Publish</button>
-                            <button id="btnSubscribe">Subscribe</button>
-                        </div>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      background-color: #4caf50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #45a049;
+    }
+
+    #localVideo {
+      width: 360px;
+      border: 2px solid #4caf50;
+      border-radius: 8px;
+    }
+
+    #videos {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      justify-content: center;
+    }
+
+    video {
+      width: 320px;
+      height: 240px;
+      background: black;
+      border-radius: 8px;
+    }
+
+    #remoteContainer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Mediasoup WebRTC Video Chat</h1>
+
+  <div id="controls">
+    <button id="btnPublish">Publish</button>
+    <button id="btnSubscribe">Subscribe</button>
+  </div>
+
+  <div id="videos">
+    <div>
+      <h3>Local Stream</h3>
+      <video id="localVideo" autoplay muted playsinline></video>
     </div>
-  </body>
-  <footer>
-      <script src="bundle.js"></script>
-  </footer>
+  </div>
+
+  <h3 style="text-align: center; margin-top: 30px;">Remote Streams</h3>
+  <div id="remoteContainer"></div>
+
+  <script src="bundle.js"></script>
+</body>
 </html>

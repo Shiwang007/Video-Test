@@ -12,51 +12,23 @@ app.get("/", (req, res) => {
   res.send("Hello from mediasoup app!");
 });
 
-app.use("/sfu", express.static(path.join(__dirname, "public"))); // Use the existing __dirname
+app.use("/sfu", express.static(path.join(__dirname, "public")));
 
-// const options = {
-//   pfx: fs.readFileSync(
-//     require("path").join(
-//       require("os").homedir(),
-//       "Desktop",
-//       "mediasoup-cert.pfx"
-//     )
-//   ),
-//   passphrase: "password",
-// };
+const options = {
+  pfx: fs.readFileSync(
+    path.join(require("os").homedir(), "Desktop", "mediasoup-cert.pfx")
+  ),
+  passphrase: "password",
+};
 
 const httpServer = http.createServer(app);
-// const httpsServer = https.createServer(options, app);
-const io = new Server(httpServer);
+const httpsServer = https.createServer(options, app);
+const io = new Server(httpsServer);
 
 const peers = io.of("/mediasoup");
 
 let worker;
 let router;
-let producerTransport;
-let consumerTransport;
-let producer;
-let consumer;
-const consumers = {}; // To store consumers by their socketId
-
-const createWorker = async () => {
-  worker = await mediasoup.createWorker({
-    rtcMinPort: 2000,
-    rtcMaxPort: 2020,
-  });
-  console.log(`worker pid ${worker.pid}`);
-
-  worker.on("died", (error) => {
-    console.error("mediasoup worker has died");
-    setTimeout(() => process.exit(1), 2000);
-  });
-
-  return worker;
-};
-
-createWorker().then((w) => {
-  worker = w;
-});
 
 const mediaCodecs = [
   {
@@ -75,150 +47,145 @@ const mediaCodecs = [
   },
 ];
 
-peers.on("connection", async (socket) => {
-  console.log(socket.id);
-  socket.emit("connection-success", {
-    socketId: socket.id,
+const transports = {};
+const producers = {};
+const consumers = {};
+
+const createWorker = async () => {
+  const worker = await mediasoup.createWorker({
+    rtcMinPort: 2000,
+    rtcMaxPort: 2020,
   });
-
-  // Only create the router once, not per connection
-  if (!router) {
-    router = await worker.createRouter({ mediaCodecs });
-  }
-
-  socket.on("disconnect", () => {
-    console.log("peer disconnected");
-    // Cleanup when the peer disconnects
-    if (consumer) {
-      consumer.close();
-    }
+  console.log(`worker pid ${worker.pid}`);
+  worker.on("died", () => {
+    console.error("mediasoup worker has died");
+    setTimeout(() => process.exit(1), 2000);
   });
+  return worker;
+};
 
-  socket.on("getRtpCapabilities", (callback) => {
-    const rtpCapabilities = router.rtpCapabilities;
-    console.log("rtp Capabilities", rtpCapabilities);
-    callback({ rtpCapabilities });
-  });
+(async () => {
+  worker = await createWorker();
+  router = await worker.createRouter({ mediaCodecs });
 
-  socket.on("createWebRtcTransport", async ({ sender }, callback) => {
-    if (sender) {
-      // Producer transport for sending audio (i.e., admin or any user transmitting)
-      producerTransport = await createWebRtcTransport(callback);
-    } else {
-      // Consumer transport for receiving audio (i.e., normal users consuming audio)
-      consumerTransport = await createWebRtcTransport(callback);
-    }
-  });
+  peers.on("connection", async (socket) => {
+    console.log(`${socket.id} connected`);
+    socket.emit("connection-success", { socketId: socket.id });
 
-  socket.on("transport-connect", async ({ dtlsParameters }) => {
-    if (producerTransport) {
-      await producerTransport.connect({ dtlsParameters });
-    } else if (consumerTransport) {
-      await consumerTransport.connect({ dtlsParameters });
-    }
-  });
+    transports[socket.id] = null;
+    producers[socket.id] = [];
+    consumers[socket.id] = [];
 
-  socket.on(
-    "transport-produce",
-    async ({ kind, rtpParameters, appData }, callback) => {
-      producer = await producerTransport.produce({
-        kind,
-        rtpParameters,
-      });
-
-      console.log("Producer ID: ", producer.id, producer.kind);
-
-      producer.on("transportclose", () => {
-        console.log("transport for this producer closed");
-        producer.close();
-      });
-
-      callback({
-        id: producer.id,
-      });
-    }
-  );
-
-  socket.on("transport-recv-connect", async ({ dtlsParameters }) => {
-    await consumerTransport.connect({ dtlsParameters });
-  });
-
-  socket.on("consume", async ({ rtpCapabilities }, callback) => {
-    try {
-      if (
-        producer &&
-        router.canConsume({
-          producerId: producer.id,
-          rtpCapabilities,
-        })
-      ) {
-        consumer = await consumerTransport.consume({
-          producerId: producer.id,
-          rtpCapabilities,
-          paused: false, // Change from true to false to avoid starting muted
-        });
-
-        consumers[socket.id] = consumer; // Save the consumer with the socketId
-
-        consumer.on("transportclose", () => {
-          console.log("consumer transport closed");
-        });
-
-        consumer.on("producerclose", () => {
-          console.log("producer of consumer closed");
-        });
-
-        const params = {
-          id: consumer.id,
-          producerId: producer.id,
-          kind: consumer.kind,
-          rtpParameters: consumer.rtpParameters,
-        };
-
-        callback({ params });
+    socket.on("disconnect", () => {
+      if (transports[socket.id]) {
+        try {
+          transports[socket.id].close();
+        } catch {}
+        delete transports[socket.id];
       }
-    } catch (error) {
-      console.log(error.message);
-      callback({
-        params: {
-          error: error,
-        },
-      });
-    }
+      producers[socket.id]?.forEach((p) => p.close());
+      consumers[socket.id]?.forEach((c) => c.close());
+      delete producers[socket.id];
+      delete consumers[socket.id];
+    });
+
+    socket.on("getRtpCapabilities", (callback) => {
+      callback({ rtpCapabilities: router.rtpCapabilities });
+    });
+
+    socket.on("createWebRtcTransport", async (_, callback) => {
+      const transport = await createWebRtcTransport(callback);
+      transports[socket.id] = transport;
+    });
+
+    socket.on("transport-connect", async ({ dtlsParameters }) => {
+      const transport = transports[socket.id];
+      if (transport) await transport.connect({ dtlsParameters });
+    });
+
+    socket.on(
+      "transport-produce",
+      async ({ kind, rtpParameters }, callback) => {
+        const transport = transports[socket.id];
+        const producer = await transport.produce({ kind, rtpParameters });
+        producers[socket.id].push(producer);
+        producer.on("transportclose", () => producer.close());
+        callback({ id: producer.id });
+        socket.broadcast.emit("new-producer", {
+          producerId: producer.id,
+          socketId: socket.id,
+        });
+      }
+    );
+
+    socket.on("consume", async ({ rtpCapabilities, producerId }, callback) => {
+      try {
+        let foundProducer = null;
+        for (const sid in producers) {
+          foundProducer = producers[sid].find((p) => p.id === producerId);
+          if (foundProducer) break;
+        }
+
+        if (
+          foundProducer &&
+          router.canConsume({ producerId: foundProducer.id, rtpCapabilities })
+        ) {
+          const transport = transports[socket.id];
+          const consumer = await transport.consume({
+            producerId: foundProducer.id,
+            rtpCapabilities,
+            paused: false,
+          });
+          consumers[socket.id].push(consumer);
+          consumer.on("transportclose", () => consumer.close());
+          consumer.on("producerclose", () => consumer.close());
+          const params = {
+            id: consumer.id,
+            producerId: foundProducer.id,
+            kind: consumer.kind,
+            rtpParameters: consumer.rtpParameters,
+          };
+          callback({ params });
+        } else {
+          callback({ params: { error: "Cannot consume" } });
+        }
+      } catch (err) {
+        callback({ params: { error: err.message } });
+      }
+    });
+
+    socket.on("consumer-resume", async () => {
+      for (const consumer of consumers[socket.id] || []) {
+        try {
+          await consumer.resume();
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    });
+    socket.on("getProducers", (callback) => {
+      const allProducers = [];
+      for (const sid in producers) {
+        producers[sid].forEach((p) =>
+          allProducers.push({ producerId: p.id, socketId: sid })
+        );
+      }
+      callback(allProducers); // Make sure this is present
+    });
   });
 
-  socket.on("consumer-resume", async () => {
-    console.log("consumer resume");
-    if (consumer) {
-      await consumer.resume();
-    }
+  httpsServer.listen(process.env.PORT || 3000, () => {
+    console.log("listening on port: 3000 (HTTPS)");
   });
-
-  // Admin mute/unmute functionality
-  socket.on("muteUser", (targetSocketId) => {
-    const targetConsumer = consumers[targetSocketId];
-    if (targetConsumer) {
-      targetConsumer.pause(); // Mute the user
-      console.log(`Muted user: ${targetSocketId}`);
-    }
-  });
-
-  socket.on("unmuteUser", (targetSocketId) => {
-    const targetConsumer = consumers[targetSocketId];
-    if (targetConsumer) {
-      targetConsumer.resume(); // Unmute the user
-      console.log(`Unmuted user: ${targetSocketId}`);
-    }
-  });
-});
+})();
 
 const createWebRtcTransport = async (callback) => {
   try {
-    const webRtcTransport_options = {
+    const transport = await router.createWebRtcTransport({
       listenIps: [
         {
           ip: "0.0.0.0",
-          announcedIp: process.env.RENDER_EXTERNAL_HOSTNAME,
+          announcedIp: process.env.RENDER_EXTERNAL_HOSTNAME || "192.168.1.28",
         },
       ],
       enableUdp: true,
@@ -228,19 +195,10 @@ const createWebRtcTransport = async (callback) => {
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
       ],
-    };
-
-    let transport = await router.createWebRtcTransport(webRtcTransport_options);
-    console.log(`transport id: ${transport.id}`);
-
-    transport.on("dtlsstatechange", (dtlsState) => {
-      if (dtlsState === "closed") {
-        transport.close();
-      }
     });
 
-    transport.on("close", () => {
-      console.log("transport closed");
+    transport.on("dtlsstatechange", (dtlsState) => {
+      if (dtlsState === "closed") transport.close();
     });
 
     callback({
@@ -255,14 +213,6 @@ const createWebRtcTransport = async (callback) => {
     return transport;
   } catch (error) {
     console.log(error);
-    callback({
-      params: {
-        error: error,
-      },
-    });
+    callback({ params: { error: error.message } });
   }
 };
-
-httpServer.listen(process.env.PORT || 3000, () => {
-  console.log("listening on port: 3000 (HTTPS)");
-});
